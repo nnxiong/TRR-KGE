@@ -60,13 +60,13 @@ pip install torch numpy tqdm joblib pandas
 每行一个四元组：
 
 ```
-lhs<TAB>rel<TAB>rhs<TAB>timestamp
+subject<TAB>rel<TAB>object<TAB>timestamp
 ```
 
 两种情况：
 
-- **如果 lhs/rel/rhs/timestamp 已经是整数 ID**：用 `preprocess/process_datasets.py`
-- **如果 lhs/rel/rhs/timestamp 是字符串（例如 ICEWS 的原始实体/关系）**：用 `preprocess/process_icews.py`（会生成 `ent2id.json/rel2id.json/ts2id.json` 再转成整数）
+- **如果 subject/object/rhs/timestamp 已经是整数 ID**：用 `preprocess/process_datasets.py`
+- **如果 subject/rel/object/timestamp 是字符串（例如 ICEWS 的原始实体/关系）**：用 `preprocess/process_icews.py`（会生成 `ent2id.json/rel2id.json/ts2id.json` 再转成整数）
 
 ### 2) 运行预处理，生成训练所需的 pickle
 
