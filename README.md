@@ -1,6 +1,5 @@
----
-## 目录结构
 
+## 目录结构
 ```
 Combine-Rule_git/
 ├── preprocess/                 # 数据预处理：生成 *.pickle / history / to_skip / stat
