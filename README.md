@@ -1,132 +1,120 @@
-
-## 目录结构
+## Directory Structure
 ```
 Combine-Rule_git/
-├── preprocess/                 # 数据预处理：生成 *.pickle / history / to_skip / stat
+├── preprocess/                 # Data Preprocessing: Generate *.pickle / history / to_skip / stat
 │   ├── process_datasets.py
 │   └── process_icews.py
-├── rule/                       # 阶段1：规则挖掘与（可选）规则推理评估
-│   ├── mining.py               # 规则挖掘主入口（并行）
-│   ├── rule_mining.py          # 规则构造、置信度估计、保存
-│   ├── temporal_walk.py        # 时间游走采样
-│   ├── grapher2.py             # 读取pickle数据并自动加 inverse 边
-│   ├── apply.py                # (可选) 仅用规则生成候选
-│   └── evaluate_new.py         # (可选) 规则候选评估
-├── models/                     # 阶段2：基于规则训练（CTRule）
-│   ├── learner.py              # 训练主入口
-│   ├── datasets.py             # 读取pickle数据、训练循环、评测
-│   ├── models.py              # 模型实现（默认 learner.py 引用）
-│   ├── rule_utils.py           # 规则过滤/裁剪工具
-│   └── contrastive_learning.py # 历史交集对比学习损失
+├── rule/                       # Stage 1: Rule Mining & (Optional) Rule Inference Evaluation
+│   ├── mining.py               # Main entry for rule mining (parallel execution)
+│   ├── rule_mining.py          # Rule construction, confidence estimation and saving
+│   ├── temporal_walk.py        # Temporal walk sampling
+│   ├── grapher2.py             # Load pickle data and automatically add inverse edges
+│   ├── apply.py                # (Optional) Generate candidates using rules only
+│   └── evaluate_new.py         # (Optional) Evaluate rule-based candidates
+├── models/                     # Stage 2: Rule-based Training (CTRule)
+│   ├── learner.py              # Main training entry
+│   ├── datasets.py              # Load pickle data, training loop and evaluation
+│   ├── models.py               # Model implementation (referenced by learner.py by default)
+│   ├── rule_utils.py           # Rule filtering & pruning tools
+│   └── contrastive_learning.py # Contrastive learning loss for historical intersection
 └── (outputs)
-    ├── data/<DATASET>/         # 预处理后的数据（你需要准备/生成）
-    └── rule_result/<DATASET>/  # 规则文件（阶段1生成）
+    ├── data/<DATASET>/         # Preprocessed data (to be prepared/generated manually)
+    └── rule_result/<DATASET>/  # Rule files (generated in Stage 1)
 ```
-
 
 ---
 
-## 环境依赖
+## Environment Dependencies
 
-推荐 Python 3.8+，核心依赖大致如下（以实际环境为准）：
+Python 3.8+ is recommended. Core dependencies are listed below (subject to actual environment):
 
 - `torch`
 - `numpy`
 - `tqdm`
 - `joblib`
-- `pandas`（规则/候选部分有用到）
-- `pickle`（标准库）
+- `pandas` (Used for rule and candidate modules)
+- `pickle` (Standard Library)
 
-你可以用类似方式安装（仅供参考）：
-
+Installation command for reference:
 ```bash
 pip install torch numpy tqdm joblib pandas
 ```
 
 ---
 
-## 数据准备（必须）
+## Data Preparation
 
-模型与规则模块都默认从 `../data/<DATASET>/` 读取数据（相对脚本所在目录）。
+Both model and rule modules read data from `../data/<DATASET>/` by default (relative to the script directory).
 
-### 1) 原始数据格式
+### 1) Raw Data Format
 
-预处理脚本期望你在 `data/<DATASET>/` 下有三个文件（**无扩展名**）：
-
+The preprocessing scripts require three **extension-free** files under `data/<DATASET>/`:
 - `train`
 - `valid`
 - `test`
 
-每行一个四元组：
-
+Each line contains a quadruple in the following format:
 ```
 subject<TAB>rel<TAB>object<TAB>timestamp
 ```
 
-两种情况：
+Two scenarios:
+- **If subject/object/relation/timestamp are integer IDs**: Use `preprocess/process_datasets.py`
+- **If subject/rel/object/timestamp are strings (e.g. raw entities and relations of ICEWS)**: Use `preprocess/process_icews.py` (It will generate `ent2id.json/rel2id.json/ts2id.json` and convert content to integers)
 
-- **如果 subject/object/rhs/timestamp 已经是整数 ID**：用 `preprocess/process_datasets.py`
-- **如果 subject/rel/object/timestamp 是字符串（例如 ICEWS 的原始实体/关系）**：用 `preprocess/process_icews.py`（会生成 `ent2id.json/rel2id.json/ts2id.json` 再转成整数）
+### 2) Run Preprocessing to Generate Pickle Files for Training
 
-### 2) 运行预处理，生成训练所需的 pickle
-
-从仓库根目录执行（推荐）：
-
+Execute commands under the root directory of the repository (recommended):
 ```bash
 cd preprocess
 
-# 情况A：数据已经是 int（lhs/rel/rhs/timestamp 都是整数）
+# Case A: Data are integers (lhs/rel/rhs/timestamp are all integers)
 python process_datasets.py
 
-# 情况B：数据是字符串（会先映射到 id）
+# Case B: Data are strings (will map content to IDs first)
 python process_icews.py
 ```
 
-预处理后，`data/<DATASET>/` 里通常会生成/需要包含：
-
-- `train.pickle / valid.pickle / test.pickle`：`(N,4)` 的 `int` 数组
-- `to_skip.pickle`：过滤评测用的答案集合（lhs/rhs 两种缺失）
-- `history.pickle`：训练时用到的历史事件列表（按 (entity, rel, ts) 索引）
-- `stat`：数据统计（实体/关系/时间戳数量）
+After preprocessing, the `data/<DATASET>/` folder will contain the following files:
+- `train.pickle / valid.pickle / test.pickle`: `int` array with shape `(N,4)`
+- `to_skip.pickle`: Answer set for evaluation filtering (two types of missing values for lhs/rhs)
+- `history.pickle`: Historical event list for training (indexed by (entity, rel, ts))
+- `stat`: Data statistics (count of entities, relations and timestamps)
 
 ---
 
-## 规则挖掘（Rule Mining）
+## Rule Mining
 
-规则生成（Rule Mining）：
-在训练图上做时间游走（temporal walk），挖掘 **Symmetry / Inverse / Equivalent / Transitive(k-hop)** 等规则，并计算置信度（confidence）、support 等统计量，输出为 `json` 规则文件。
+Rule Mining:
+Perform temporal walk on the graph, mine rules such as **Symmetry / Inverse / Equivalent / Transitive(k-hop)**, calculate statistical metrics including confidence and support, and export results as JSON rule files.
 
-- 规则挖掘入口：`rule/mining.py`  
-- 输出目录：`rule_result/<DATASET>/`
+- Entry for rule mining: `rule/mining.py`
+- Output directory: `rule_result/<DATASET>/`
 
-### 运行示例
-
+### Run Example
 ```bash
 cd rule
 
-# 例：在 ICEWS14 上挖掘规则，最长路径长度 5，随机游走 100 次，并行 10 进程，每个 head relation 取 top-2
+# Example: Mine rules on ICEWS14, max path length = 5, 100 random walks, 10 parallel processes, keep top-2 rules for each head relation
 python mining.py --dataset ICEWS14 --rule_lengths 5 --num_walks 100 --num_processes 10 --top 2
 ```
 
-常用参数（见 `rule/mining.py`）：
+Common parameters (refer to `rule/mining.py`):
+- `--dataset / -d`: Dataset name (corresponds to `../data/<DATASET>/`)
+- `--rule_lengths / -l`: Maximum rule length (Transitive rules range from 2-hop to the set maximum length)
+- `--num_walks / -n`: Sampling walk times for each relation type
+- `--transition_distr / -t`: Walk sampling distribution (`exp` by default)
+- `--num_processes / -p`: Number of parallel processes
+- `--top / -top`: Number of reserved rules for each head relation (sorted and truncated by confidence)
 
-- `--dataset / -d`：数据集名（对应 `../data/<DATASET>/`）
-- `--rule_lengths / -l`：最大规则长度（Transitive 会从 2-hop 到 maxlen）
-- `--num_walks / -n`：每个关系/类型的采样游走次数
-- `--transition_distr / -t`：游走采样分布（默认 `exp`）
-- `--num_processes / -p`：并行进程数
-- `--top / -top`：每个 head relation 保留的规则条数（按 conf 排序截断）
+### Output Rule File
 
-### 输出规则文件
-
-规则会保存为类似文件名：
-
+Rule files are named in the following format:
 ```
 rule_result/ICEWS14/<timestamp>_maxlen[5]_top2_rules.json
 ```
 
-文件内容结构（简化）：
-
+Simplified file structure:
 ```json
 {
   "head_rel_id": [
@@ -145,13 +133,12 @@ rule_result/ICEWS14/<timestamp>_maxlen[5]_top2_rules.json
 
 ---
 
-## 模型训练
+## Model Training
 
-训练入口：`models/learner.py`  
-默认使用的模型实现：`models/models6.py` 中的 `CTRule`
+Training entry: `models/learner.py`
+Default model implementation: `CTRule` in `models/models6.py`
 
-### 运行示例
-
+### Run Example
 ```bash
 cd models
 
@@ -166,59 +153,53 @@ python learner.py \
   --cuda cuda:0
 ```
 
-训练输出会写到：
-
+Training outputs are saved to:
 ```
 models/results/<DATASET>/<...timestamp...>/
 ├── log.txt
 └── best.pth
 ```
 
-常用参数（见 `models/learner.py`）：
-
-- `--dataset`：数据集名（对应 `../data/<DATASET>/`）
-- `--rank`：embedding 维度（注意模型内部做了复数/四元数分块运算，rank 需满足代码约束）
-- `--learning_rate`：Adagrad 学习率
-- `--lambda1`：对比学习损失权重（`contrastive_learning.py`）
-- `--rules_dir`：规则目录（默认 `../rule_result/`）
-- `--rules`：规则文件名（位于 `rules_dir/<dataset>/`）
-- `--gpu`：是否启用 CUDA（1/0）
-- `--cuda`：设备字符串（例如 `cuda:0`）
-
-
+Common parameters (refer to `models/learner.py`):
+- `--dataset`: Dataset name (corresponds to `../data/<DATASET>/`)
+- `--rank`: Embedding dimension (Note: Complex/quaternion block operations are implemented inside the model, the rank must comply with code constraints)
+- `--learning_rate`: Learning rate for Adagrad optimizer
+- `--lambda1`: Weight of contrastive learning loss (defined in `contrastive_learning.py`)
+- `--rules_dir`: Directory of rule files (`../rule_result/` by default)
+- `--rules`: Name of the rule file (stored under `rules_dir/<dataset>/`)
+- `--gpu`: Enable CUDA or not (1 for enable, 0 for disable)
+- `--cuda`: Device string (e.g. `cuda:0`)
 
 ---
 
-## 常见注意事项
+## General Notes
 
-1. **请从对应目录执行脚本**  
-   规则挖掘：`cd rule && python mining.py ...`  
-   模型训练：`cd models && python learner.py ...`  
+1. **Execute scripts in corresponding directories**
+   Rule mining: `cd rule && python mining.py ...`
+   Model training: `cd models && python learner.py ...`
 
-2. **CUDA 设备号**  
-   部分代码在评测/张量创建时写死了 `"cuda:0"`（例如 `models6.py` 里生成 `targets`），如果你用多卡或非 0 号卡，可能需要小改代码统一用 `args.cuda`。
+2. **CUDA Device ID**
+   Part of the code hardcodes `"cuda:0"` during evaluation and tensor initialization (e.g. target generation in `models6.py`). If you use multiple GPUs or non-zero device ID, minor code modifications are required to uniformly use `args.cuda`.
 
-3. **数据必须先跑预处理**  
-   否则 `stat / *.pickle / history.pickle / to_skip.pickle` 不存在会直接报错。
+3. **Run preprocessing first**
+   Missing files including `stat`, `*.pickle`, `history.pickle` and `to_skip.pickle` will directly cause runtime errors.
 
 ---
 
-## 快速复现流程（汇总）
-
+## Quick Reproduction Workflow (Summary)
 ```bash
-# 0. 准备 data/<DATASET>/{train,valid,test}
+# 0. Prepare files: data/<DATASET>/{train,valid,test}
 
-# 1) 预处理
+# 1) Data Preprocessing
 cd preprocess
-python process_datasets.py   # 或 python process_icews.py
+python process_datasets.py   # Or run python process_icews.py
 
-# 2) 规则挖掘
+# 2) Rule Mining
 cd ../rule
 python mining.py --dataset ICEWS14 --rule_lengths 5 --num_walks 100 --num_processes 10 --top 2
 
-# 3) 基于规则训练
+# 3) Rule-based Model Training
 cd ../models
 python learner.py --dataset ICEWS14 --rank 1000 --learning_rate 0.1 --lambda1 0.06 \
   --rules_dir ../rule_result/ --rules "<timestamp>_maxlen[5]_top2_rules.json" --gpu 1 --cuda cuda:0
 ```
-
