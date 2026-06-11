@@ -1,6 +1,6 @@
 ## Directory Structure
 ```
-Combine-Rule_git/
+TRR-KGE/
 ├── preprocess/                 # Data Preprocessing: Generate *.pickle / history / to_skip / stat
 │   ├── process_datasets.py
 │   └── process_icews.py
