@@ -35,11 +35,6 @@ Python 3.8+ is recommended. Core dependencies are listed below (subject to actua
 - `pandas` (Used for rule and candidate modules)
 - `pickle` (Standard Library)
 
-Installation command for reference:
-```bash
-pip install torch numpy tqdm joblib pandas
-```
-
 ---
 
 ## Data Preparation
